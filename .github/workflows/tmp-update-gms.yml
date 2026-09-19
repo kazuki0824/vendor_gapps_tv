@@ -38,17 +38,19 @@ jobs:
             exit 1
           fi
 
+          apkanalyzer="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name apkanalyzer -perm -111 2>/dev/null | sort -V | tail -n1)"
           aapt2="$(find "${ANDROID_HOME}/build-tools" -type f -name aapt2 -perm -111 2>/dev/null | sort -V | tail -n1)"
           apksigner="$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner -perm -111 2>/dev/null | sort -V | tail -n1)"
+          test -n "${apkanalyzer}"
           test -n "${aapt2}"
           test -n "${apksigner}"
 
           badging="$("${aapt2}" dump badging "${tmp}")"
           package_name="$(printf '%s\n' "${badging}" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n1)"
-          version_code="$(printf '%s\n' "${badging}" | sed -n "s/^package:.*versionCode='\([^']*\)'.*/\1/p" | head -n1)"
-          version_name="$(printf '%s\n' "${badging}" | sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p" | head -n1)"
-          min_sdk="$(printf '%s\n' "${badging}" | sed -n "s/^sdkVersion:'\([^']*\)'.*/\1/p" | head -n1)"
-          target_sdk="$(printf '%s\n' "${badging}" | sed -n "s/^targetSdkVersion:'\([^']*\)'.*/\1/p" | head -n1)"
+          version_code="$("${apkanalyzer}" manifest version-code "${tmp}")"
+          version_name="$("${apkanalyzer}" manifest version-name "${tmp}")"
+          min_sdk="$("${apkanalyzer}" manifest min-sdk "${tmp}")"
+          target_sdk="$("${apkanalyzer}" manifest target-sdk "${tmp}")"
 
           echo "package=${package_name}"
           echo "versionCode=${version_code}"
