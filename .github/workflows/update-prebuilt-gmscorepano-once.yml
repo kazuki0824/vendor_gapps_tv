@@ -1,11 +1,11 @@
 name: One-shot update PrebuiltGmsCorePano
 
 on:
-  push:
+  pull_request:
     branches:
       - vic
     paths:
-      - .github/workflows/update-prebuilt-gmscorepano-once.yml
+      - .github/gms-update-trigger
 
 permissions:
   contents: write
@@ -14,10 +14,10 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout vic
+      - name: Checkout PR branch
         uses: actions/checkout@v4
         with:
-          ref: vic
+          ref: ${{ github.head_ref }}
           fetch-depth: 0
 
       - name: Download and validate upstream Android TV GMS
@@ -73,13 +73,14 @@ jobs:
 
           install -m 0644 "${tmp}" "${dst}"
 
-      - name: Commit blob update and remove one-shot workflow
+      - name: Commit update into PR branch
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/update-prebuilt-gmscorepano-once.yml
+          git rm .github/gms-update-trigger
           git add arm64/proprietary/product/priv-app/PrebuiltGmsCorePano/PrebuiltGmsCorePano.apk
           git commit -m "gapps_tv: update PrebuiltGmsCorePano"
-          git push origin HEAD:vic
+          git push origin HEAD:${{ github.head_ref }}
