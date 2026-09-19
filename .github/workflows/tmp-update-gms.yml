@@ -1,4 +1,4 @@
-name: Temporary update PrebuiltGmsCorePano
+name: Temporary cleanup GMS update
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 jobs:
-  update:
+  cleanup:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout vic
@@ -20,88 +20,17 @@ jobs:
           ref: vic
           fetch-depth: 0
 
-      - name: Download and validate upstream Android TV GMS
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          dst="arm64/proprietary/product/priv-app/PrebuiltGmsCorePano/PrebuiltGmsCorePano.apk"
-          tmp="${RUNNER_TEMP}/PrebuiltGmsCorePano.apk"
-
-          curl --fail --location --retry 4 --retry-delay 2 \
-            "https://raw.githubusercontent.com/MindTheGapps/vendor_gapps_tv/baklava/arm64/proprietary/product/priv-app/PrebuiltGmsCorePano/PrebuiltGmsCorePano.apk" \
-            --output "${tmp}"
-
-          size="$(stat -c '%s' "${tmp}")"
-          if [ "${size}" -ge 104857600 ]; then
-            echo "APK exceeds GitHub's 100 MiB blob limit: ${size} bytes" >&2
-            exit 1
-          fi
-
-          apkanalyzer="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name apkanalyzer -perm -111 2>/dev/null | sort -V | tail -n1)"
-          aapt2="$(find "${ANDROID_HOME}/build-tools" -type f -name aapt2 -perm -111 2>/dev/null | sort -V | tail -n1)"
-          apksigner="$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner -perm -111 2>/dev/null | sort -V | tail -n1)"
-          test -n "${apkanalyzer}"
-          test -n "${aapt2}"
-          test -n "${apksigner}"
-
-          badging="$("${aapt2}" dump badging "${tmp}")"
-          package_name="$(printf '%s\n' "${badging}" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n1)"
-          version_code="$("${apkanalyzer}" manifest version-code "${tmp}")"
-          version_name="$("${apkanalyzer}" manifest version-name "${tmp}")"
-          min_sdk="$("${apkanalyzer}" manifest min-sdk "${tmp}")"
-          target_sdk="$("${apkanalyzer}" manifest target-sdk "${tmp}")"
-
-          echo "package=${package_name}"
-          echo "versionCode=${version_code}"
-          echo "versionName=${version_name}"
-          echo "minSdk=${min_sdk}"
-          echo "targetSdk=${target_sdk}"
-          sha256sum "${tmp}"
-
-          test "${package_name}" = "com.google.android.gms"
-          case "${version_code}" in
-            ''|*[!0-9]*) echo "Non-numeric versionCode: ${version_code}" >&2; exit 1 ;;
-          esac
-          case "${min_sdk}" in
-            ''|*[!0-9]*) echo "Non-numeric minSdk: ${min_sdk}" >&2; exit 1 ;;
-          esac
-          if [ "${version_code}" -lt 240202000 ]; then
-            echo "Upstream GMS is too old: ${version_code}" >&2
-            exit 1
-          fi
-          if [ "${min_sdk}" -gt 35 ]; then
-            echo "Upstream GMS does not support Android 15: minSdk=${min_sdk}" >&2
-            exit 1
-          fi
-
-          echo "=== old APK apksigner ==="
-          old_signer_output="$("${apksigner}" verify --verbose --print-certs "${dst}" 2>&1 || true)"
-          printf '%s\n' "${old_signer_output}"
-          echo "=== new APK apksigner ==="
-          new_signer_output="$("${apksigner}" verify --verbose --print-certs "${tmp}" 2>&1 || true)"
-          printf '%s\n' "${new_signer_output}"
-
-          old_cert="$(printf '%s\n' "${old_signer_output}" | sed -n -E 's/^V[0-9.]+ Signer: certificate SHA-256 digest: //p' | head -n1)"
-          new_cert="$(printf '%s\n' "${new_signer_output}" | sed -n -E 's/^V[0-9.]+ Signer: certificate SHA-256 digest: //p' | head -n1)"
-          echo "old signer SHA-256=${old_cert}"
-          echo "new signer SHA-256=${new_cert}"
-          test -n "${old_cert}"
-          test -n "${new_cert}"
-          test "${old_cert}" = "${new_cert}"
-
-          install -m 0644 "${tmp}" "${dst}"
-
-      - name: Commit APK update
+      - name: Remove temporary branch and workflow files
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add arm64/proprietary/product/priv-app/PrebuiltGmsCorePano/PrebuiltGmsCorePano.apk
-          if git diff --cached --quiet; then
-            echo "APK already matches upstream"
-            exit 0
-          fi
-          git commit -m "gapps_tv: update PrebuiltGmsCorePano"
+
+          git push origin --delete tmp/update-prebuilt-gmscorepano || true
+
+          git rm .github/workflows/tmp-update-gms.yml
+          git rm .github/gms-update-trigger
+
+          git commit -m "ci: remove temporary GMS update workflow"
           git push origin HEAD:vic
