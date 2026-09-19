@@ -75,11 +75,19 @@ jobs:
             exit 1
           fi
 
-          old_cert="$("${apksigner}" verify --print-certs "${dst}" 2>&1 | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n1)"
-          new_cert="$("${apksigner}" verify --print-certs "${tmp}" 2>&1 | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n1)"
+          echo "=== old APK apksigner ==="
+          old_signer_output="$("${apksigner}" verify --verbose --print-certs "${dst}" 2>&1 || true)"
+          printf '%s\n' "${old_signer_output}"
+          echo "=== new APK apksigner ==="
+          new_signer_output="$("${apksigner}" verify --verbose --print-certs "${tmp}" 2>&1 || true)"
+          printf '%s\n' "${new_signer_output}"
+
+          old_cert="$(printf '%s\n' "${old_signer_output}" | sed -n -E 's/^Signer #[0-9]+ certificate SHA-256 digest: //p' | head -n1)"
+          new_cert="$(printf '%s\n' "${new_signer_output}" | sed -n -E 's/^Signer #[0-9]+ certificate SHA-256 digest: //p' | head -n1)"
           echo "old signer SHA-256=${old_cert}"
           echo "new signer SHA-256=${new_cert}"
           test -n "${old_cert}"
+          test -n "${new_cert}"
           test "${old_cert}" = "${new_cert}"
 
           install -m 0644 "${tmp}" "${dst}"
