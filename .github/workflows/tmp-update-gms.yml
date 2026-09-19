@@ -75,8 +75,8 @@ jobs:
             exit 1
           fi
 
-          old_cert="$("${apksigner}" verify --print-certs "${dst}" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n1)"
-          new_cert="$("${apksigner}" verify --print-certs "${tmp}" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n1)"
+          old_cert="$("${apksigner}" verify --print-certs "${dst}" 2>&1 | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n1)"
+          new_cert="$("${apksigner}" verify --print-certs "${tmp}" 2>&1 | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n1)"
           echo "old signer SHA-256=${old_cert}"
           echo "new signer SHA-256=${new_cert}"
           test -n "${old_cert}"
