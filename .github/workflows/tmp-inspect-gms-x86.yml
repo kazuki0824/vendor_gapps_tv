@@ -20,6 +20,26 @@ jobs:
           ref: vic
           fetch-depth: 0
 
+      - name: Dump ARM64 GMS DEX NPE path
+        shell: bash
+        run: |
+          set -euo pipefail
+          arm="arm64/proprietary/product/priv-app/PrebuiltGmsCorePano/PrebuiltGmsCorePano.apk"
+          apkanalyzer="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer -perm -111 2>/dev/null | sort -V | tail -n1)"
+          test -n "$apkanalyzer"
+
+          echo "=== APkAnalyzer ==="
+          "$apkanalyzer" --version || true
+
+          echo "=== TARGET CLASSES IN DEX TREE ==="
+          "$apkanalyzer" dex packages --defined-only "$arm" |
+            grep -E '(^| )((bpqh|jly|jlk|jml)( |$)|GmsAppComponentFactory)' || true
+
+          for cls in bpqh jly jlk jml com.google.android.gms.chimera.GmsAppComponentFactory; do
+            echo "===== DEX CLASS $cls ====="
+            "$apkanalyzer" dex code --class "$cls" "$arm" || true
+          done
+
       - name: Download exact Android TV x86 GMS 24.10.17
         shell: bash
         run: |
