@@ -407,6 +407,7 @@ It allows additional grants on top of privapp-permissions-platform.xml
         <permission name="android.permission.CHANGE_DEVICE_IDLE_TEMP_WHITELIST"/>
         <permission name="android.permission.CHECK_REMOTE_LOCKSCREEN"/>
         <permission name="android.permission.COMPANION_APPROVE_WIFI_CONNECTIONS"/>
+        <permission name="android.permission.CONFIGURE_FACTORY_RESET_PROTECTION"/>
         <permission name="android.permission.CONNECTIVITY_USE_RESTRICTED_NETWORKS"/>
         <permission name="android.permission.CONTROL_INCALL_EXPERIENCE"/>
         <permission name="android.permission.CONTROL_DISPLAY_SATURATION"/>
@@ -453,6 +454,7 @@ It allows additional grants on top of privapp-permissions-platform.xml
         <permission name="android.permission.PROVIDE_RESOLVER_RANKER_SERVICE" />
         <permission name="android.permission.PROVIDE_TRUST_AGENT"/>
         <permission name="android.permission.READ_DREAM_STATE"/>
+        <permission name="android.permission.READ_DROPBOX_DATA"/>
         <permission name="android.permission.READ_LOGS"/>
         <permission name="android.permission.READ_NEARBY_STREAMING_POLICY"/>
         <permission name="android.permission.READ_NETWORK_USAGE_HISTORY"/>
@@ -483,6 +485,7 @@ It allows additional grants on top of privapp-permissions-platform.xml
         <permission name="android.permission.SUBSTITUTE_NOTIFICATION_APP_NAME"/>
         <permission name="android.permission.SUBSTITUTE_SHARE_TARGET_APP_NAME_AND_ICON"/>
         <permission name="android.permission.TETHER_PRIVILEGED"/>
+        <permission name="android.permission.THREAD_NETWORK_PRIVILEGED"/>
         <permission name="android.permission.TURN_SCREEN_ON"/>
         <permission name="android.permission.UPDATE_APP_OPS_STATS"/>
         <permission name="android.permission.UPDATE_DEVICE_STATS"/>
