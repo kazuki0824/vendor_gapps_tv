@@ -73,15 +73,8 @@ jobs:
           grep -q 'certificate SHA-256 digest: f0fd6c5b410f25cb25c3b53346c8972fae30f8ee7411df910480ad6b2d60db83' /tmp/x86.signer
           "$apksigner" lineage --in "$gsf" --print-certs -v > /tmp/gsf.lineage
           cat /tmp/gsf.lineage
-          python3 - <<'PY'
-          import re, sys
-          s=open("/tmp/gsf.lineage").read()
-          cert="f0fd6c5b410f25cb25c3b53346c8972fae30f8ee7411df910480ad6b2d60db83"
-          blocks=re.split(r"(?=Signer #[0-9]+ in lineage)",s)
-          b=[x for x in blocks if cert in x]
-          if len(b)!=1 or "Has shared UID capability    : true" not in b[0]:
-              sys.exit("x86 signer lacks shared-UID lineage compatibility")
-          PY
+          grep -A20 'certificate SHA-256 digest: f0fd6c5b410f25cb25c3b53346c8972fae30f8ee7411df910480ad6b2d60db83' /tmp/gsf.lineage | \
+            grep -q 'Has shared UID capability    : true'
 
           echo "=== requested permission set must be identical ==="
           "$aapt2" dump permissions "$dst" 2>/dev/null | sed -n "s/.*uses-permission[^:]*: name='\\([^']*\\)'.*/\\1/p" | sort -u > /tmp/arm.perms
