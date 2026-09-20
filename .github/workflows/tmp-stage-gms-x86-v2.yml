@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: vic
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Reuse validated APKMirror downloader
         shell: bash
@@ -108,8 +108,8 @@ jobs:
           PY
 
           echo "=== move onto latest vic without overwriting concurrent work ==="
-          git fetch origin vic
-          git merge --ff-only origin/vic
+          git fetch origin vic --depth=1
+          git reset --hard FETCH_HEAD
           echo "a2077de7167c993aaea31e7f1d1e121ced74dc06119dfcc04e723195b7b75080  $dst" | sha256sum -c -
 
           install -m 0644 "$x86" "$dst"
