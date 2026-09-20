@@ -81,3 +81,14 @@ jobs:
             show {print}
             /^    \.line 460$/ {exit}
           ' "$gms" || true
+
+          echo "===== GmsApplication beginning / vxn construction method ====="
+          sed -n '1,240p' "$gms"
+
+          echo "===== refs to GmsApplication.e vxn ====="
+          grep -n -F -B30 -A50 'GmsApplication;->e:Lvxn;' "$gms" || true
+
+          echo "===== BaseApplicationContext ====="
+          bac="$(find /tmp/gms-smali -type f -path '*/com/google/android/gms/common/app/BaseApplicationContext.smali' | head -n1)"
+          test -n "$bac"
+          cat "$bac"
