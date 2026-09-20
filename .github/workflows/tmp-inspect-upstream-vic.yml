@@ -1,0 +1,42 @@
+name: Temporary inspect upstream vic GMS
+
+on:
+  push:
+    branches:
+      - vic
+    paths:
+      - .github/upstream-vic-inspect-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect upstream GitLab vic
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="https://gitlab.com/MindTheGapps/vendor_gapps_tv.git"
+          head="$(git ls-remote "$repo" refs/heads/vic | awk '{print $1}')"
+          echo "UPSTREAM_VIC_HEAD=$head"
+
+          git clone --depth=1 --branch vic "$repo" upstream
+          apk="upstream/arm64/proprietary/product/priv-app/PrebuiltGmsCorePano/PrebuiltGmsCorePano.apk"
+          test -f "$apk"
+
+          apkanalyzer="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer -perm -111 2>/dev/null | sort -V | tail -n1)"
+          test -n "$apkanalyzer"
+
+          echo "APK_BLOB_SHA=$(cd upstream && git hash-object arm64/proprietary/product/priv-app/PrebuiltGmsCorePano/PrebuiltGmsCorePano.apk)"
+          echo "APK_SIZE=$(stat -c '%s' "$apk")"
+          echo "VERSION_CODE=$("$apkanalyzer" manifest version-code "$apk")"
+          echo "VERSION_NAME=$("$apkanalyzer" manifest version-name "$apk")"
+          echo "MIN_SDK=$("$apkanalyzer" manifest min-sdk "$apk")"
+          echo "TARGET_SDK=$("$apkanalyzer" manifest target-sdk "$apk")"
+          sha256sum "$apk"
+
+          echo "=== last commits touching GMS APK ==="
+          cd upstream
+          git log --follow --format='%H %cI %s' --             arm64/proprietary/product/priv-app/PrebuiltGmsCorePano/PrebuiltGmsCorePano.apk | head -20 || true
