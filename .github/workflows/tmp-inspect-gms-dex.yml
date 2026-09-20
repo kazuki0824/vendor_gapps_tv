@@ -43,9 +43,9 @@ jobs:
             fi
           }
 
-          dump bpqh w
-          dump jly a
+          dump bpqh
+          dump jly
           dump jlk
-          dump jml f
-          dump com.google.android.gms.chimera.GmsAppComponentFactory instantiateProvider
+          dump jml
+          dump com.google.android.gms.chimera.GmsAppComponentFactory
 
