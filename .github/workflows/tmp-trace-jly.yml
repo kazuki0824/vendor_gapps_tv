@@ -1,0 +1,42 @@
+name: Temporary trace jly Context initializer
+
+on:
+  push:
+    branches:
+      - vic
+    paths:
+      - .github/jly-trace-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download GMS and apktool
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 5 -o /tmp/gms.apk "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/vic/arm64/proprietary/product/priv-app/PrebuiltGmsCorePano/PrebuiltGmsCorePano.apk"
+          apktool_url="$(curl -fsSL https://api.github.com/repos/iBotPeaches/Apktool/releases/latest | jq -r '.assets[] | select(.name | test("^apktool_.*\\.jar$")) | .browser_download_url' | head -n1)"
+          test -n "$apktool_url"
+          curl -fL --retry 5 -o /tmp/apktool.jar "$apktool_url"
+
+      - name: Decode smali and locate jly Context writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/gms-smali
+          java -jar /tmp/apktool.jar d -f -r -o /tmp/gms-smali /tmp/gms.apk >/tmp/apktool.log 2>&1
+          tail -n 20 /tmp/apktool.log
+
+          echo "===== WRITES TO jly.a Context ====="
+          hits="$(grep -R -l -F 'Ljly;->a:Landroid/content/Context;' /tmp/gms-smali/smali* || true)"
+          printf '%s\n' "$hits"
+
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            echo "===== FILE $f ====="
+            grep -n -F -B40 -A40 'Ljly;->a:Landroid/content/Context;' "$f" || true
+          done <<< "$hits"
