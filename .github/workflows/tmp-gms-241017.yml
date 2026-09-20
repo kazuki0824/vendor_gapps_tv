@@ -77,7 +77,18 @@ jobs:
           hrefs = [htmllib.unescape(x) for x in re.findall(r'href=["\x27]([^"\x27]+)["\x27]', text)]
           dl = [urllib.parse.urljoin(variant, x) for x in hrefs if "download.php" in x]
           if not dl:
-              raise SystemExit("APKMirror download.php link not found")
+              print("=== hrefs containing download/apk ===")
+              for x in hrefs:
+                  low = x.lower()
+                  if "download" in low or ".apk" in low:
+                      print(x)
+              print("=== forms ===")
+              for m in re.findall(r'<form[^>]*action=["\\x27]([^"\\x27]+)["\\x27][^>]*>', text, flags=re.I):
+                  print("FORM " + htmllib.unescape(m))
+              print("=== input names/values ===")
+              for name, value in re.findall(r'<input[^>]*name=["\\x27]([^"\\x27]+)["\\x27][^>]*value=["\\x27]([^"\\x27]*)["\\x27][^>]*>', text, flags=re.I):
+                  print(f"INPUT {name}={value}")
+              raise SystemExit("APKMirror direct download link not found; diagnostics printed")
 
           out = Path("/tmp/PrebuiltGmsCorePano.apk")
           last = None
