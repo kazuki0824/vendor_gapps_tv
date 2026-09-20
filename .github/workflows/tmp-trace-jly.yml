@@ -60,3 +60,24 @@ jobs:
 
           echo "===== GmsApplication around jly.a assignment ====="
           sed -n '3820,3945p' "$gms"
+
+          echo "===== vxn class ====="
+          vxn="$(find /tmp/gms-smali -type f -name 'vxn.smali' | head -n1)"
+          test -n "$vxn"
+          cat "$vxn"
+
+          echo "===== all refs/writes to Lvxn fields ====="
+          refs="$(grep -R -l -E 'Lvxn;->' /tmp/gms-smali/smali* || true)"
+          printf '%s\n' "$refs"
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            echo "===== VXN REF FILE $f ====="
+            grep -n -E -B25 -A25 'Lvxn;->' "$f" || true
+          done <<< "$refs"
+
+          echo "===== attachBaseContext around source line 424 ====="
+          awk '
+            /^    \.line 400$/ {show=1}
+            show {print}
+            /^    \.line 460$/ {exit}
+          ' "$gms" || true
