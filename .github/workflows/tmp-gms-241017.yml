@@ -77,18 +77,27 @@ jobs:
           hrefs = [htmllib.unescape(x) for x in re.findall(r'href=["\x27]([^"\x27]+)["\x27]', text)]
           dl = [urllib.parse.urljoin(variant, x) for x in hrefs if "download.php" in x]
           if not dl:
-              print("=== hrefs containing download/apk ===")
-              for x in hrefs:
-                  low = x.lower()
-                  if "download" in low or ".apk" in low:
-                      print(x)
-              print("=== forms ===")
-              for m in re.findall(r'<form[^>]*action=["\\x27]([^"\\x27]+)["\\x27][^>]*>', text, flags=re.I):
-                  print("FORM " + htmllib.unescape(m))
-              print("=== input names/values ===")
-              for name, value in re.findall(r'<input[^>]*name=["\\x27]([^"\\x27]+)["\\x27][^>]*value=["\\x27]([^"\\x27]*)["\\x27][^>]*>', text, flags=re.I):
-                  print(f"INPUT {name}={value}")
-              raise SystemExit("APKMirror direct download link not found; diagnostics printed")
+              import shutil, subprocess
+              chrome = shutil.which("google-chrome") or shutil.which("chromium") or shutil.which("chromium-browser")
+              if not chrome:
+                  raise SystemExit("Chrome/Chromium not found on runner")
+              print("Using headless browser:", chrome)
+              cp = subprocess.run(
+                  [chrome, "--headless=new", "--no-sandbox", "--disable-gpu",
+                   "--virtual-time-budget=25000", "--dump-dom", variant],
+                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=90
+              )
+              print(cp.stderr[-3000:])
+              text = cp.stdout
+              hrefs = [htmllib.unescape(x) for x in re.findall(r'href=["\\x27]([^"\\x27]+)["\\x27]', text)]
+              dl = [urllib.parse.urljoin(variant, x) for x in hrefs if "download.php" in x]
+              if not dl:
+                  print("=== dynamic hrefs containing download/apk ===")
+                  for x in hrefs:
+                      low = x.lower()
+                      if "download" in low or ".apk" in low:
+                          print(x)
+                  raise SystemExit("APKMirror dynamic download link not found")
 
           out = Path("/tmp/PrebuiltGmsCorePano.apk")
           last = None
