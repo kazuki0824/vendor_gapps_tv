@@ -49,7 +49,27 @@ jobs:
           dump jml
           dump com.google.android.gms.chimera.GmsAppComponentFactory
 
-          echo "===== ALL REFS TO jly.a Context ====="
-          "$apkanalyzer" dex code /tmp/gms.apk |
-            grep -F -B30 -A30 'Ljly;->a:Landroid/content/Context;' || true
+          echo "===== JADX FIND jly.a ASSIGNMENTS ====="
+          api="https://api.github.com/repos/skylot/jadx/releases/latest"
+          jadx_url="$(python3 - <<'PY'
+import json, urllib.request
+with urllib.request.urlopen("https://api.github.com/repos/skylot/jadx/releases/latest") as r:
+    data=json.load(r)
+for a in data["assets"]:
+    n=a["name"]
+    if n.startswith("jadx-") and n.endswith(".zip") and "gui" not in n.lower():
+        print(a["browser_download_url"])
+        break
+else:
+    raise SystemExit("jadx zip not found")
+PY
+)"
+          curl -fL --retry 5 -o /tmp/jadx.zip "$jadx_url"
+          rm -rf /tmp/jadx /tmp/jadx-out
+          mkdir -p /tmp/jadx
+          unzip -q /tmp/jadx.zip -d /tmp/jadx
+          /tmp/jadx/bin/jadx -j 4 --no-res --show-bad-code -d /tmp/jadx-out /tmp/gms.apk >/tmp/jadx.log 2>&1 || true
+          tail -n 30 /tmp/jadx.log
+          echo "===== jly.a assignment/reference hits ====="
+          grep -R -n -E 'jly\.a[[:space:]]*=|jly\.a;|jly\.a\b' /tmp/jadx-out/sources | head -n 300 || true
 
