@@ -40,3 +40,23 @@ jobs:
             echo "===== FILE $f ====="
             grep -n -F -B40 -A40 'Ljly;->a:Landroid/content/Context;' "$f" || true
           done <<< "$hits"
+
+          gms="/tmp/gms-smali/smali_classes2/com/google/android/gms/common/app/GmsApplication.smali"
+          echo "===== attachBaseContext declaration ====="
+          grep -n '^\.method.*attachBaseContext' "$gms" || true
+
+          echo "===== method containing jly.a assignment ====="
+          awk '
+            /^\.method/ {m=$0; n=NR}
+            /sput-object .*Ljly;->a:Landroid\/content\/Context;/ {
+              print "method_line=" n
+              print m
+              print "assignment_line=" NR
+            }
+          ' "$gms"
+
+          echo "===== GmsApplication Context/provider-query landmarks ====="
+          grep -n -E 'ContentResolver;->query|Ljly;->a:Landroid/content/Context;|Ljml;->f\(\)Ljml;' "$gms" || true
+
+          echo "===== GmsApplication around jly.a assignment ====="
+          sed -n '3820,3945p' "$gms"
