@@ -49,3 +49,7 @@ jobs:
           dump jml
           dump com.google.android.gms.chimera.GmsAppComponentFactory
 
+          echo "===== ALL REFS TO jly.a Context ====="
+          "$apkanalyzer" dex code /tmp/gms.apk |
+            grep -F -B30 -A30 'Ljly;->a:Landroid/content/Context;' || true
+
