@@ -1,0 +1,59 @@
+name: Temporary inspect ARM64 GMS DEX
+
+on:
+  push:
+    branches:
+      - vic
+    paths:
+      - .github/gms-dex-241017-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download ARM64 GMS 24.10.17
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/vic/arm64/proprietary/product/priv-app/PrebuiltGmsCorePano/PrebuiltGmsCorePano.apk"
+          curl -fL --retry 5 --retry-delay 2 -o /tmp/gms.apk "$url"
+          ls -lh /tmp/gms.apk
+          sha256sum /tmp/gms.apk
+
+      - name: Disassemble NPE path
+        shell: bash
+        run: |
+          set -euo pipefail
+          apkanalyzer="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer -perm -111 2>/dev/null | sort -V | tail -n1)"
+          test -n "$apkanalyzer"
+          echo "apkanalyzer=$apkanalyzer"
+          "$apkanalyzer" --version || true
+
+          dump() {
+            local cls="$1"
+            local method="${2:-}"
+            echo "===== CLASS $cls METHOD $method ====="
+            if [ -n "$method" ]; then
+              "$apkanalyzer" dex code --class "$cls" --method "$method" /tmp/gms.apk || true
+            else
+              "$apkanalyzer" dex code --class "$cls" /tmp/gms.apk || true
+            fi
+          }
+
+          dump bpqh w
+          dump jly a
+          dump jlk
+          dump jml f
+          dump com.google.android.gms.chimera.GmsAppComponentFactory instantiateProvider
+
+      - name: Show class tree
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          apkanalyzer="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer -perm -111 2>/dev/null | sort -V | tail -n1)"
+          "$apkanalyzer" dex packages --defined-only /tmp/gms.apk |
+            grep -E '(^|[ .])((bpqh|jly|jlk|jml)([ .$]|$)|GmsAppComponentFactory)' || true
