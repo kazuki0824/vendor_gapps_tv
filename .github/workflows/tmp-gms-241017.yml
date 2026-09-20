@@ -40,42 +40,42 @@ jobs:
           git diff --cached --stat
           git commit -m "vic: restore e70cd43 baseline"
 
-      - name: Download Android TV GMS 24.10.17 180406
+      - name: Download Android TV GMS 24.10.17 candidate
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf /tmp/apkcd /tmp/gms-download
-          mkdir -p /tmp/apkcd /tmp/gms-download
-          cd /tmp/apkcd
-          npm init -y >/dev/null 2>&1
-          npm install @nirewen/apkcombo-downloader
-
           node --input-type=module <<'JS'
-          import { APKComboDownloader } from "@nirewen/apkcombo-downloader";
+          import fs from "node:fs";
 
-          const downloader = new APKComboDownloader({
-            outDir: "/tmp/gms-download"
-          });
+          const versionUrl =
+            "https://apkcombo.app/google-play-services/com.google.android.gms/download/phone-24.10.17-apk";
 
-          const result = await downloader.download(
-            { org: "google-play-services", repo: "com.google.android.gms" },
-            {
-              version: "24.10.17",
-              arch: "arm64-v8a",
-              dpi: "213-320dpi",
-              type: "apk",
-              outFile: "PrebuiltGmsCorePano",
-              overwrite: true
-            }
-          );
-          console.log(result);
+          const landing = await fetch(versionUrl, { redirect: "follow" });
+          console.log("landing_status=" + landing.status);
+          console.log("landing_url=" + landing.url);
+
+          const checkinRes = await fetch("https://apkcombo.app/checkin");
+          if (!checkinRes.ok) throw new Error("checkin failed: " + checkinRes.status);
+          const checkin = (await checkinRes.text()).trim();
+          console.log("checkin=" + checkin);
+
+          const finalUrl = landing.url + "&" + checkin;
+          const res = await fetch(finalUrl, { redirect: "follow" });
+          console.log("final_status=" + res.status);
+          console.log("final_url=" + res.url);
+          console.log("content_type=" + res.headers.get("content-type"));
+          console.log("content_disposition=" + res.headers.get("content-disposition"));
+          console.log("content_length=" + res.headers.get("content-length"));
+
+          if (!res.ok) throw new Error("APK download failed: " + res.status);
+          const buf = Buffer.from(await res.arrayBuffer());
+          console.log("downloaded_bytes=" + buf.length);
+          console.log("magic=" + buf.subarray(0, 8).toString("hex"));
+          if (buf.length < 1024 * 1024 || buf[0] !== 0x50 || buf[1] !== 0x4b) {
+            throw new Error("download is not an APK/ZIP");
+          }
+          fs.writeFileSync("/tmp/PrebuiltGmsCorePano.apk", buf);
           JS
-
-          echo "=== downloaded files ==="
-          find /tmp/gms-download -maxdepth 2 -type f -printf '%p %s bytes\n'
-          apk="$(find /tmp/gms-download -type f \( -name '*.apk' -o -name 'PrebuiltGmsCorePano*' \) | head -n1)"
-          test -n "$apk"
-          cp "$apk" /tmp/PrebuiltGmsCorePano.apk
 
       - name: Validate and replace only GMSCore
         shell: bash
