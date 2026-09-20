@@ -1,0 +1,171 @@
+name: Temporary restore vic baseline and stage GMS 24.10.17
+
+on:
+  push:
+    branches:
+      - vic
+    paths:
+      - .github/gms-241017-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout vic
+        uses: actions/checkout@v4
+        with:
+          ref: vic
+          fetch-depth: 0
+
+      - name: Restore e70cd43 baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          base=e70cd43e95df433a5e858e182f20276e0b8c5d15
+          paths=(
+            arm64/proprietary/product/priv-app/PrebuiltGmsCorePano/PrebuiltGmsCorePano.apk
+            common/common-vendor.mk
+            common/proprietary/product/etc/permissions/split-permissions-google.xml
+            proprietary-files-common.txt
+          )
+
+          git checkout "$base" -- "${paths[@]}"
+          git add -- "${paths[@]}"
+          git diff --cached --stat
+          git commit -m "vic: restore e70cd43 baseline"
+
+      - name: Download Android TV GMS 24.10.17 180406
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import html as htmllib
+          import re
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140 Safari/537.36"
+          opener = urllib.request.build_opener()
+          opener.addheaders = [("User-Agent", ua), ("Accept-Language", "en-US,en;q=0.9")]
+
+          release = "https://www.apkmirror.com/apk/google-inc/google-play-services-android-tv/google-play-services-android-tv-24-10-17-release/"
+          target_slug = "google-play-services-android-tv-24-10-17-180406-617915183-android-apk-download"
+
+          def get(url):
+              with opener.open(url, timeout=60) as r:
+                  data = r.read()
+                  return r.geturl(), r.headers.get("Content-Type", ""), data
+
+          _, _, body = get(release)
+          text = body.decode("utf-8", "replace")
+          hrefs = [htmllib.unescape(x) for x in re.findall(r'href=["\x27]([^"\x27]+)["\x27]', text)]
+          variants = [urllib.parse.urljoin(release, x) for x in hrefs if target_slug in x]
+          if not variants:
+              raise SystemExit("180406 variant link not found on APKMirror release page")
+          variant = variants[0]
+          print("variant_url=" + variant)
+
+          _, _, body = get(variant)
+          text = body.decode("utf-8", "replace")
+          hrefs = [htmllib.unescape(x) for x in re.findall(r'href=["\x27]([^"\x27]+)["\x27]', text)]
+          dl = [urllib.parse.urljoin(variant, x) for x in hrefs if "download.php" in x]
+          if not dl:
+              raise SystemExit("APKMirror download.php link not found")
+
+          out = Path("/tmp/PrebuiltGmsCorePano.apk")
+          last = None
+          for url in dl:
+              try:
+                  final_url, ctype, data = get(url)
+                  print("download_candidate_final_url=" + final_url)
+                  print("download_candidate_content_type=" + ctype)
+                  if data[:2] == b"PK":
+                      out.write_bytes(data)
+                      print(f"downloaded_bytes={len(data)}")
+                      break
+                  page = data.decode("utf-8", "replace")
+                  hrefs2 = [htmllib.unescape(x) for x in re.findall(r'href=["\x27]([^"\x27]+)["\x27]', page)]
+                  nested = [urllib.parse.urljoin(final_url, x) for x in hrefs2 if "download.php" in x or ".apk" in x]
+                  for nurl in nested:
+                      nfinal, nctype, ndata = get(nurl)
+                      print("nested_final_url=" + nfinal)
+                      print("nested_content_type=" + nctype)
+                      if ndata[:2] == b"PK":
+                          out.write_bytes(ndata)
+                          print(f"downloaded_bytes={len(ndata)}")
+                          break
+                  if out.exists():
+                      break
+              except Exception as e:
+                  last = e
+                  print("candidate_error=" + repr(e))
+          if not out.exists():
+              raise SystemExit(f"failed to download APK: {last!r}")
+          PY
+
+      - name: Validate and replace only GMSCore
+        shell: bash
+        run: |
+          set -euo pipefail
+          dst="arm64/proprietary/product/priv-app/PrebuiltGmsCorePano/PrebuiltGmsCorePano.apk"
+          new="/tmp/PrebuiltGmsCorePano.apk"
+
+          apkanalyzer="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer -perm -111 2>/dev/null | sort -V | tail -n1)"
+          aapt2="$(find "$ANDROID_HOME/build-tools" -type f -name aapt2 -perm -111 2>/dev/null | sort -V | tail -n1)"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -perm -111 2>/dev/null | sort -V | tail -n1)"
+          test -n "$apkanalyzer"
+          test -n "$aapt2"
+          test -n "$apksigner"
+
+          package="$("$aapt2" dump badging "$new" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n1)"
+          version_code="$("$apkanalyzer" manifest version-code "$new")"
+          version_name="$("$apkanalyzer" manifest version-name "$new")"
+          min_sdk="$("$apkanalyzer" manifest min-sdk "$new")"
+          target_sdk="$("$apkanalyzer" manifest target-sdk "$new")"
+
+          echo "package=$package"
+          echo "versionCode=$version_code"
+          echo "versionName=$version_name"
+          echo "minSdk=$min_sdk"
+          echo "targetSdk=$target_sdk"
+          sha256sum "$new"
+
+          test "$package" = "com.google.android.gms"
+          test "$version_code" = "241017107"
+          case "$version_name" in
+            "24.10.17"*) ;;
+            *) echo "Unexpected versionName: $version_name" >&2; exit 1 ;;
+          esac
+          test "$min_sdk" = "30"
+          test "$target_sdk" = "34"
+
+          unzip -l "$new" | grep -q 'lib/arm64-v8a/'
+          unzip -l "$new" | grep -q 'lib/armeabi-v7a/'
+
+          "$apksigner" verify --verbose --print-certs "$dst" > /tmp/old.signer 2>&1
+          "$apksigner" verify --verbose --print-certs "$new" > /tmp/new.signer 2>&1
+          cat /tmp/old.signer
+          cat /tmp/new.signer
+
+          sed -n -E 's/^(Signer #[0-9]+|V[0-9.]+ Signer): certificate SHA-256 digest: //p' /tmp/old.signer | sort -u > /tmp/old.certs
+          sed -n -E 's/^(Signer #[0-9]+|V[0-9.]+ Signer): certificate SHA-256 digest: //p' /tmp/new.signer | sort -u > /tmp/new.certs
+          echo "old certificates:"; cat /tmp/old.certs
+          echo "new certificates:"; cat /tmp/new.certs
+          test -s /tmp/old.certs
+          test -s /tmp/new.certs
+          comm -12 /tmp/old.certs /tmp/new.certs | tee /tmp/common.certs
+          test -s /tmp/common.certs
+
+          install -m 0644 "$new" "$dst"
+
+          git add "$dst"
+          git diff --cached --stat
+          git commit -m "vic: update PrebuiltGmsCorePano to 24.10.17"
+          git push origin HEAD:vic
