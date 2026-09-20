@@ -1,0 +1,125 @@
+name: Temporary inspect x86 GMS lineage
+
+on:
+  push:
+    branches:
+      - vic
+    paths:
+      - .github/gms-x86-lineage-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: vic
+          fetch-depth: 0
+
+      - name: Download x86 GMS
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/apkm-x86 && mkdir -p /tmp/apkm-x86 && cd /tmp/apkm-x86
+          npm init -y >/dev/null 2>&1
+          npm install cheerio >/dev/null 2>&1
+          node --input-type=module <<'JS'
+          import fs from "node:fs";
+          import { load } from "cheerio";
+          const BASE = "https://www.apkmirror.com";
+          const path = "/apk/google-inc/google-play-services-android-tv/google-play-services-android-tv-24-10-17-release/google-play-services-android-tv-24-10-17-080706-617915183-android-apk-download/";
+          const headers = {"user-agent":"Mozilla/5.0"};
+          async function getText(url) {
+            const r=await fetch(url,{headers,redirect:"follow"});
+            console.log("GET",r.status,r.url);
+            if(!r.ok) throw new Error("HTTP "+r.status);
+            return await r.text();
+          }
+          let $=load(await getText(BASE+path));
+          const jump=$("a.downloadButton").attr("href");
+          if(!jump) throw new Error("no downloadButton");
+          $=load(await getText(new URL(jump,BASE).href));
+          const direct=$(".card-with-tabs a[href]").attr("href");
+          if(!direct) throw new Error("no final link");
+          const r=await fetch(new URL(direct,BASE).href,{headers,redirect:"follow"});
+          console.log("FINAL",r.status,r.url);
+          if(!r.ok) throw new Error("download HTTP "+r.status);
+          const b=Buffer.from(await r.arrayBuffer());
+          console.log("bytes="+b.length);
+          fs.writeFileSync("/tmp/gms-x86.apk",b);
+          JS
+
+      - name: Inspect
+        shell: bash
+        run: |
+          set -euo pipefail
+          arm="arm64/proprietary/product/priv-app/PrebuiltGmsCorePano/PrebuiltGmsCorePano.apk"
+          x86="/tmp/gms-x86.apk"
+          gsf="arm64/proprietary/system_ext/priv-app/GoogleServicesFramework/GoogleServicesFramework.apk"
+          suw="arm64/proprietary/product/priv-app/SetupWraithPrebuilt/SetupWraithPrebuilt.apk"
+          apkanalyzer="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer -perm -111 2>/dev/null | sort -V | tail -n1)"
+          aapt2="$(find "$ANDROID_HOME/build-tools" -type f -name aapt2 -perm -111 2>/dev/null | sort -V | tail -n1)"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -perm -111 2>/dev/null | sort -V | tail -n1)"
+
+          for spec in ARM64:"$arm" X86:"$x86" GSF:"$gsf" SETUPWRAITH:"$suw"; do
+            label="${spec%%:*}"; apk="${spec#*:}"
+            echo "=== LINEAGE $label ==="
+            "$apksigner" lineage --in "$apk" --print-certs -v || true
+          done
+
+          echo "=== METADATA ==="
+          for spec in ARM64:"$arm" X86:"$x86"; do
+            label="${spec%%:*}"; apk="${spec#*:}"
+            echo "--- $label ---"
+            echo "package=$("$aapt2" dump badging "$apk" 2>/dev/null | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n1)"
+            echo "versionCode=$("$apkanalyzer" manifest version-code "$apk")"
+            echo "versionName=$("$apkanalyzer" manifest version-name "$apk")"
+            echo "minSdk=$("$apkanalyzer" manifest min-sdk "$apk")"
+            echo "targetSdk=$("$apkanalyzer" manifest target-sdk "$apk")"
+            sha256sum "$apk"
+            unzip -Z1 "$apk" | grep -E '^lib/(x86|x86_64|arm64-v8a|armeabi-v7a)/' | cut -d/ -f2 | sort -u | sed 's/^/abi=/' || true
+          done
+
+          "$aapt2" dump permissions "$arm" 2>/dev/null | sed -n "s/.*uses-permission[^:]*: name='\\([^']*\\)'.*/\\1/p" | sort -u > /tmp/arm.perms
+          "$aapt2" dump permissions "$x86" 2>/dev/null | sed -n "s/.*uses-permission[^:]*: name='\\([^']*\\)'.*/\\1/p" | sort -u > /tmp/x86.perms
+          echo "=== PERMISSION COUNTS ==="
+          echo "arm=$(wc -l < /tmp/arm.perms)"
+          echo "x86=$(wc -l < /tmp/x86.perms)"
+          echo "=== X86-ONLY PERMISSIONS ==="
+          comm -13 /tmp/arm.perms /tmp/x86.perms
+          echo "=== ARM64-ONLY PERMISSIONS ==="
+          comm -23 /tmp/arm.perms /tmp/x86.perms
+
+          "$apkanalyzer" manifest print "$arm" > /tmp/arm.xml
+          "$apkanalyzer" manifest print "$x86" > /tmp/x86.xml
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET, json
+          A="{http://schemas.android.com/apk/res/android}"
+          def inspect(path):
+              root=ET.parse(path).getroot()
+              app=root.find("application")
+              out={
+                "root": {k:root.get(A+k) for k in ["sharedUserId","versionCode","versionName"]},
+                "application": {k:app.get(A+k) for k in ["name","appComponentFactory","extractNativeLibs","directBootAware","persistent"]},
+              }
+              for tag in ["uses-feature","uses-library","provider","service","receiver","activity","activity-alias"]:
+                  out[tag]=sorted({e.get(A+"name") for e in root.iter(tag) if e.get(A+"name")})
+              out["gservicesProvider"]=[
+                  {k:e.get(A+k) for k in ["name","authorities","process","exported","directBootAware","enabled"]}
+                  for e in root.iter("provider")
+                  if e.get(A+"name")=="com.google.android.gms.gservices.provider.GservicesProvider"
+              ]
+              return out
+          arm=inspect("/tmp/arm.xml"); x86=inspect("/tmp/x86.xml")
+          print("=== CRITICAL MANIFEST ARM64 ===")
+          print(json.dumps({k:arm[k] for k in ["root","application","gservicesProvider"]},sort_keys=True))
+          print("=== CRITICAL MANIFEST X86 ===")
+          print(json.dumps({k:x86[k] for k in ["root","application","gservicesProvider"]},sort_keys=True))
+          for k in ["uses-feature","uses-library","provider","service","receiver","activity","activity-alias"]:
+              print("=== COMPONENT DIFF",k,"===")
+              print("x86-only",json.dumps(sorted(set(x86[k])-set(arm[k]))))
+              print("arm64-only",json.dumps(sorted(set(arm[k])-set(x86[k]))))
+          PY
