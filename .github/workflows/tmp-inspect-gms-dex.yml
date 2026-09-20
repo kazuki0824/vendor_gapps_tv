@@ -49,11 +49,3 @@ jobs:
           dump jml f
           dump com.google.android.gms.chimera.GmsAppComponentFactory instantiateProvider
 
-      - name: Show class tree
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          apkanalyzer="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer -perm -111 2>/dev/null | sort -V | tail -n1)"
-          "$apkanalyzer" dex packages --defined-only /tmp/gms.apk |
-            grep -E '(^|[ .])((bpqh|jly|jlk|jml)([ .$]|$)|GmsAppComponentFactory)' || true
