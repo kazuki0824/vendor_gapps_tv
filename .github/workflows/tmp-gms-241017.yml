@@ -44,91 +44,37 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import html as htmllib
-          import re
-          import urllib.parse
-          import urllib.request
-          from pathlib import Path
+          rm -rf /tmp/apkmd /tmp/gms-download
+          mkdir -p /tmp/apkmd /tmp/gms-download
+          cd /tmp/apkmd
+          npm init -y >/dev/null 2>&1
+          npm install apkmirror-downloader
 
-          ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140 Safari/537.36"
-          opener = urllib.request.build_opener()
-          opener.addheaders = [("User-Agent", ua), ("Accept-Language", "en-US,en;q=0.9")]
+          node --input-type=module <<'JS'
+          import { APKMirrorDownloader } from "apkmirror-downloader";
 
-          release = "https://www.apkmirror.com/apk/google-inc/google-play-services-android-tv/google-play-services-android-tv-24-10-17-release/"
-          target_slug = "google-play-services-android-tv-24-10-17-180406-617915183-android-apk-download"
+          const downloader = new APKMirrorDownloader({
+            outDir: "/tmp/gms-download",
+            overwrite: true
+          });
 
-          def get(url):
-              with opener.open(url, timeout=60) as r:
-                  data = r.read()
-                  return r.geturl(), r.headers.get("Content-Type", ""), data
+          await downloader.download(
+            { org: "google-inc", repo: "google-play-services-android-tv" },
+            {
+              version: "24.10.17",
+              arch: "arm64-v8a",
+              minAndroidVersion: "30",
+              type: "apk",
+              outFile: "PrebuiltGmsCorePano"
+            }
+          );
+          JS
 
-          _, _, body = get(release)
-          text = body.decode("utf-8", "replace")
-          hrefs = [htmllib.unescape(x) for x in re.findall(r'href=["\x27]([^"\x27]+)["\x27]', text)]
-          variants = [urllib.parse.urljoin(release, x) for x in hrefs if target_slug in x]
-          if not variants:
-              raise SystemExit("180406 variant link not found on APKMirror release page")
-          variant = variants[0]
-          print("variant_url=" + variant)
-
-          _, _, body = get(variant)
-          text = body.decode("utf-8", "replace")
-          hrefs = [htmllib.unescape(x) for x in re.findall(r'href=["\x27]([^"\x27]+)["\x27]', text)]
-          dl = [urllib.parse.urljoin(variant, x) for x in hrefs if "download.php" in x]
-          if not dl:
-              import shutil, subprocess
-              chrome = shutil.which("google-chrome") or shutil.which("chromium") or shutil.which("chromium-browser")
-              if not chrome:
-                  raise SystemExit("Chrome/Chromium not found on runner")
-              print("Using headless browser:", chrome)
-              cp = subprocess.run(
-                  [chrome, "--headless=new", "--no-sandbox", "--disable-gpu",
-                   "--virtual-time-budget=25000", "--dump-dom", variant],
-                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=90
-              )
-              print(cp.stderr[-3000:])
-              text = cp.stdout
-              hrefs = [htmllib.unescape(x) for x in re.findall(r'href=["\\x27]([^"\\x27]+)["\\x27]', text)]
-              dl = [urllib.parse.urljoin(variant, x) for x in hrefs if "download.php" in x]
-              if not dl:
-                  print("=== dynamic hrefs containing download/apk ===")
-                  for x in hrefs:
-                      low = x.lower()
-                      if "download" in low or ".apk" in low:
-                          print(x)
-                  raise SystemExit("APKMirror dynamic download link not found")
-
-          out = Path("/tmp/PrebuiltGmsCorePano.apk")
-          last = None
-          for url in dl:
-              try:
-                  final_url, ctype, data = get(url)
-                  print("download_candidate_final_url=" + final_url)
-                  print("download_candidate_content_type=" + ctype)
-                  if data[:2] == b"PK":
-                      out.write_bytes(data)
-                      print(f"downloaded_bytes={len(data)}")
-                      break
-                  page = data.decode("utf-8", "replace")
-                  hrefs2 = [htmllib.unescape(x) for x in re.findall(r'href=["\x27]([^"\x27]+)["\x27]', page)]
-                  nested = [urllib.parse.urljoin(final_url, x) for x in hrefs2 if "download.php" in x or ".apk" in x]
-                  for nurl in nested:
-                      nfinal, nctype, ndata = get(nurl)
-                      print("nested_final_url=" + nfinal)
-                      print("nested_content_type=" + nctype)
-                      if ndata[:2] == b"PK":
-                          out.write_bytes(ndata)
-                          print(f"downloaded_bytes={len(ndata)}")
-                          break
-                  if out.exists():
-                      break
-              except Exception as e:
-                  last = e
-                  print("candidate_error=" + repr(e))
-          if not out.exists():
-              raise SystemExit(f"failed to download APK: {last!r}")
-          PY
+          echo "=== downloaded files ==="
+          find /tmp/gms-download -maxdepth 2 -type f -printf '%p %s bytes\n'
+          apk="$(find /tmp/gms-download -type f \( -name '*.apk' -o -name 'PrebuiltGmsCorePano*' \) | head -n1)"
+          test -n "$apk"
+          cp "$apk" /tmp/PrebuiltGmsCorePano.apk
 
       - name: Validate and replace only GMSCore
         shell: bash
