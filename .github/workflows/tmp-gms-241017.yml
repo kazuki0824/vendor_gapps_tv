@@ -44,30 +44,31 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf /tmp/apkmd /tmp/gms-download
-          mkdir -p /tmp/apkmd /tmp/gms-download
-          cd /tmp/apkmd
+          rm -rf /tmp/apkcd /tmp/gms-download
+          mkdir -p /tmp/apkcd /tmp/gms-download
+          cd /tmp/apkcd
           npm init -y >/dev/null 2>&1
-          npm install apkmirror-downloader
+          npm install @nirewen/apkcombo-downloader
 
           node --input-type=module <<'JS'
-          import { APKMirrorDownloader } from "apkmirror-downloader";
+          import { APKComboDownloader } from "@nirewen/apkcombo-downloader";
 
-          const downloader = new APKMirrorDownloader({
-            outDir: "/tmp/gms-download",
-            overwrite: true
+          const downloader = new APKComboDownloader({
+            outDir: "/tmp/gms-download"
           });
 
-          await downloader.download(
-            { org: "google-inc", repo: "google-play-services-android-tv" },
+          const result = await downloader.download(
+            { org: "google-play-services", repo: "com.google.android.gms" },
             {
               version: "24.10.17",
               arch: "arm64-v8a",
-              minAndroidVersion: "30",
+              dpi: "213-320dpi",
               type: "apk",
-              outFile: "PrebuiltGmsCorePano"
+              outFile: "PrebuiltGmsCorePano",
+              overwrite: true
             }
           );
+          console.log(result);
           JS
 
           echo "=== downloaded files ==="
