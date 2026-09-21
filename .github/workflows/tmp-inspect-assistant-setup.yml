@@ -1,0 +1,81 @@
+name: Temporary inspect TV Assistant setup
+
+on:
+  push:
+    branches:
+      - vic
+    paths:
+      - .github/assistant-setup-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: vic
+          fetch-depth: 1
+
+      - name: Inspect Katniss and SetupWraith manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          kat="arm64/proprietary/product/priv-app/Katniss/Katniss.apk"
+          suw="arm64/proprietary/product/priv-app/SetupWraithPrebuilt/SetupWraithPrebuilt.apk"
+          apkanalyzer="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer -perm -111 2>/dev/null | sort -V | tail -n1)"
+          aapt2="$(find "$ANDROID_HOME/build-tools" -type f -name aapt2 -perm -111 2>/dev/null | sort -V | tail -n1)"
+          test -n "$apkanalyzer"; test -n "$aapt2"
+
+          for spec in KATNISS:"$kat" SETUPWRAITH:"$suw"; do
+            label="${spec%%:*}"; apk="${spec#*:}"
+            echo "=== META $label ==="
+            echo "package=$("$aapt2" dump badging "$apk" 2>/dev/null | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n1)"
+            echo "versionCode=$("$apkanalyzer" manifest version-code "$apk")"
+            echo "versionName=$("$apkanalyzer" manifest version-name "$apk")"
+            echo "minSdk=$("$apkanalyzer" manifest min-sdk "$apk")"
+            echo "targetSdk=$("$apkanalyzer" manifest target-sdk "$apk")"
+            "$apkanalyzer" manifest print "$apk" > "/tmp/${label}.xml"
+          done
+
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET, json, re
+          A="{http://schemas.android.com/apk/res/android}"
+          def dump(label,path):
+              root=ET.parse(path).getroot()
+              print(f"=== RELEVANT COMPONENTS {label} ===")
+              for tag in ("activity","activity-alias","receiver","service","provider"):
+                  for e in root.iter(tag):
+                      name=e.get(A+"name","")
+                      actions=[a.get(A+"name","") for f in e.findall("intent-filter") for a in f.findall("action")]
+                      cats=[a.get(A+"name","") for f in e.findall("intent-filter") for a in f.findall("category")]
+                      text=" ".join([name,*actions,*cats])
+                      if re.search(r"(?i)(setup|assistant|voice|boot|provision|wizard|katniss|oobe|onboard)",text):
+                          print(json.dumps({
+                              "tag":tag,
+                              "name":name,
+                              "enabled":e.get(A+"enabled"),
+                              "exported":e.get(A+"exported"),
+                              "permission":e.get(A+"permission"),
+                              "process":e.get(A+"process"),
+                              "actions":actions,
+                              "categories":cats,
+                          },sort_keys=True))
+              print(f"=== META-DATA {label} ===")
+              for e in root.iter("meta-data"):
+                  n=e.get(A+"name","")
+                  v=e.get(A+"value")
+                  r=e.get(A+"resource")
+                  if re.search(r"(?i)(setup|assistant|voice|provision|wizard|oobe|onboard)",n+" "+str(v)+" "+str(r)):
+                      print(json.dumps({"name":n,"value":v,"resource":r},sort_keys=True))
+          dump("KATNISS","/tmp/KATNISS.xml")
+          dump("SETUPWRAITH","/tmp/SETUPWRAITH.xml")
+          PY
+
+          echo "=== STRING HINTS KATNISS ==="
+          unzip -p "$kat" classes.dex 2>/dev/null | strings | grep -E -i 'setup|assistant|provision|wizard|onboard|device_provisioned|user_setup_complete' | head -n 300 || true
+
+          echo "=== STRING HINTS SETUPWRAITH ==="
+          unzip -p "$suw" classes.dex 2>/dev/null | strings | grep -E -i 'setup|assistant|provision|wizard|onboard|device_provisioned|user_setup_complete' | head -n 300 || true
