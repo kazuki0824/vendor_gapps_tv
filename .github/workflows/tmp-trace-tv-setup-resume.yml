@@ -1,0 +1,47 @@
+name: Temporary trace TV setup resume
+
+on:
+  push:
+    branches:
+      - vic
+    paths:
+      - .github/tv-setup-resume-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: vic
+          fetch-depth: 1
+
+      - name: Trace setup resume classes
+        shell: bash
+        run: |
+          set -euo pipefail
+          kat="arm64/proprietary/product/priv-app/Katniss/Katniss.apk"
+          suw="arm64/proprietary/product/priv-app/SetupWraithPrebuilt/SetupWraithPrebuilt.apk"
+          apkanalyzer="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer -perm -111 2>/dev/null | sort -V | tail -n1)"
+          test -n "$apkanalyzer"
+
+          dump() {
+            local apk="$1" cls="$2"
+            echo "===== CLASS $cls ====="
+            "$apkanalyzer" dex code --class "$cls" "$apk" || true
+          }
+
+          dump "$suw" com.google.android.tvsetup.app.BootCompletedReceiver
+          dump "$suw" com.google.android.tvsetup.app.deferred.DeferredActivity
+          dump "$suw" com.google.android.tungsten.setupwraith.MainActivity
+          dump "$kat" com.google.android.apps.tvsearch.setup.AssistantSetupForSetupWizardActivity
+          dump "$kat" com.google.android.apps.tvsearch.setup.fix.FixAssistantSettingsReceiver_Receiver
+
+          echo "===== SETUPWRAITH TARGET STRINGS ====="
+          unzip -p "$suw" classes.dex 2>/dev/null | strings | grep -E             'tv_user_setup_complete|user_setup_complete|ATV_SETUP|katniss|BOOT_COMPLETED|DEFERRED_SETUP|setup complete|Setup complete' || true
+
+          echo "===== KATNISS TARGET STRINGS ====="
+          unzip -p "$kat" classes.dex 2>/dev/null | strings | grep -E             'tv_user_setup_complete|user_setup_complete|ATV_SETUP|ASSISTANT_ENABLED|BOOT_COMPLETED|setup complete|Setup complete' || true
